@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sort"
+	"strconv"
+	"sync"
 )
 
 type sortedKeys []uint32
@@ -13,14 +15,21 @@ func (sk sortedKeys) Less(i, j int) bool { return sk[i] < sk[j] }
 func (sk sortedKeys) Swap(i, j int)      { sk[i], sk[j] = sk[j], sk[i] }
 
 type ConsistentHashing struct {
+	// The number of replicas to increase the load distribution
+	virtualNodeNum int
+
 	hashSortedKeys sortedKeys
 
 	hashRing  map[uint32]string
 	serverMap map[string]struct{}
+
+	mu sync.RWMutex
 }
 
-func NewConsistentHashing() *ConsistentHashing {
+func NewConsistentHashing(virtualNodeNum int) *ConsistentHashing {
 	return &ConsistentHashing{
+		virtualNodeNum: virtualNodeNum,
+
 		hashSortedKeys: []uint32{},
 
 		hashRing:  map[uint32]string{},
@@ -37,11 +46,15 @@ func (ch *ConsistentHashing) AddServer(name string) {
 
 	hash := ch.hash(name)
 	ch.serverMap[name] = struct{}{}
-	ch.hashSortedKeys = append(ch.hashSortedKeys, hash)
 	ch.hashRing[hash] = name
 
-	// Sort the hash keys for searching the nearest server
-	sort.Sort(ch.hashSortedKeys)
+	// Add virtual nodes: simply re-hash the server name concatenated with index
+	for i := 0; i < ch.virtualNodeNum; i++ {
+		virtualNode := ch.hash(name + strconv.Itoa(i))
+		ch.hashRing[virtualNode] = name
+	}
+
+	ch.updateHashSortedKeys()
 }
 
 // RemoveServer removes the given server from the consistent hashing ring
@@ -55,16 +68,26 @@ func (ch *ConsistentHashing) RemoveServer(name string) {
 	delete(ch.hashRing, hash)
 	delete(ch.serverMap, name)
 
-	pivot := 0
-	for index, val := range ch.hashSortedKeys {
-		if val == hash {
-			pivot = index
-		}
+	// Delete virtual nodes
+	for i := 0; i < ch.virtualNodeNum; i++ {
+		virtualNode := ch.hash(name + strconv.Itoa(i))
+		delete(ch.hashRing, virtualNode)
 	}
-	ch.hashSortedKeys = append(ch.hashSortedKeys[0:pivot], ch.hashSortedKeys[pivot:]...)
 
-	// Sort the hash keys for searching the nearest server
-	sort.Sort(ch.hashSortedKeys)
+	ch.updateHashSortedKeys()
+}
+
+func (ch *ConsistentHashing) updateHashSortedKeys() {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+
+	var tempHashes sortedKeys
+	for k := range ch.hashRing {
+		tempHashes = append(tempHashes, k)
+	}
+
+	sort.Sort(tempHashes)
+	ch.hashSortedKeys = tempHashes
 }
 
 // ListServers lists all available servers in the consistent hashing ring
@@ -83,7 +106,6 @@ func (ch *ConsistentHashing) Get(key string) (string, error) {
 	}
 
 	hash := ch.hash(key)
-	fmt.Printf("Hash value of key: %s -> %+v\n", key, hash)
 	// Find the Nearest server
 	var serverHash uint32
 	for _, val := range ch.hashSortedKeys {
@@ -105,7 +127,7 @@ func (ch *ConsistentHashing) Get(key string) (string, error) {
 }
 
 func (ch *ConsistentHashing) hash(key string) uint32 {
-	return crc32.ChecksumIEEE([]byte(key)) / (10_000_000)
+	return crc32.ChecksumIEEE([]byte(key))
 }
 
 func (ch *ConsistentHashing) printHashRing() {
