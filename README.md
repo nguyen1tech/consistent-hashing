@@ -6,7 +6,7 @@ average, where k is the number of keys, and n is the number of slots. In contras
 traditional hash tables, a change in the number of array slots causes nearly all keys to be
 remapped [1]"
 ## How it works
-1. Store both objects and servers on the circle(hash right)
+1. Store both objects and servers on the circle(hash ring)
 2. To find out which server to ask for the given key we need to locate the key on the circle
 and move in the ascending angle direction(counter-clockwise) until we find a server
 ![img.png](img.png)
