@@ -106,20 +106,13 @@ func (ch *ConsistentHashing) Get(key string) (string, error) {
 	}
 
 	hash := ch.hash(key)
-	// Find the Nearest server
-	var serverHash uint32
-	for _, val := range ch.hashSortedKeys {
-		if hash <= val {
-			serverHash = val
-			break
-		}
+	// Find the Nearest server using binary search
+	nearest := findNearestIndex(ch.hashSortedKeys, hash)
+	if nearest >= len(ch.hashSortedKeys) {
+		nearest = 0
 	}
 
-	if serverHash == uint32(0) {
-		serverHash = ch.hashSortedKeys[0]
-	}
-
-	server, found := ch.hashRing[serverHash]
+	server, found := ch.hashRing[ch.hashSortedKeys[nearest]]
 	if !found {
 		return "", fmt.Errorf("server not found")
 	}
@@ -137,4 +130,17 @@ func (ch *ConsistentHashing) printHashRing() {
 		fmt.Printf("%s:%+v ", server, val)
 	}
 	fmt.Printf("]\n")
+}
+
+func findNearestIndex(keys sortedKeys, key uint32) int {
+	i, j := 0, len(keys)
+	for i < j {
+		h := (i + j) / 2
+		if keys[h] < key {
+			i = h + 1
+		} else {
+			j = h
+		}
+	}
+	return i
 }

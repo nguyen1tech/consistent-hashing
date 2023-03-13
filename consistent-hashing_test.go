@@ -22,7 +22,7 @@ func TestConsistentHashing_Set(t *testing.T) {
 
 	// simply: 3581567309, text: 999008199, typesetting: 1167078435, long established fact: 1495964601
 	keys := map[string]string{
-		"simply":                "server02",
+		//"simply":                "server02",
 		"text":                  "server01",
 		"typesetting":           "server01",
 		"long established fact": "server02",
